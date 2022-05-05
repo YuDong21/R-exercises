@@ -1,0 +1,73 @@
+#####  predict titanic  randomForest
+library(mlr3verse)
+library(mlr3data)
+library(tidyverse)
+library(readr)
+
+
+data(titanic)
+View(titanic)
+glimpse(titanic)
+
+
+
+
+# data pre processing
+titanic$embarked[is.na(titanic$embarked)] <- "S"
+data_t <- titanic %>% 
+  select(survived,sex,age,fare,embarked) %>% 
+  fill(age)
+
+data_t$fare[is.na(data_t$fare)] <- median(data_t$fare,na.rm = T)
+
+t_train <- data_t[!is.na(data_t$survived),] 
+ 
+t_test <- data_t[is.na(data_t$survived),]
+glimpse(t_train)
+
+
+
+# creat a task
+task1 <- as_task_classif(t_train,target = "survived")
+autoplot(task1,type = "pairs")
+# choose a learner
+learner1 <- lrn("classif.randomForest")
+
+resampling1 <- rsmp("cv",folds = 4)
+rm(measure1)
+measure1 <- msr("classif.acc")
+
+search_space1 <- ps(maxnodes = p_int(2,10),
+                   ntree = p_int(100,500))
+terminator <- trm("evals",n_evals = 5)
+tuner <- tnr("grid_search",resolution = 10)
+# Cross-validation using a 4-fold in the inner resampling loop
+at <- AutoTuner$new(learner1,resampling1,measure1,terminator,tuner,search_space1)
+# 3-fold cross-validation was used in the outer resampling loop
+outer_resampling <- rsmp("cv",folds = 3)
+rr = resample(task1,at,outer_resampling,store_models = T)
+
+
+extract_inner_tuning_results(rr)
+# train task
+at$train(task1)
+rr$aggregate()
+rr$score()
+at$model
+# prediction
+prediction <- at$predict_newdata(t_test)
+predictions <- as.data.table(prediction)
+
+# final results
+df <- predictions %>% 
+  select(response)
+
+final_results <- t_test %>% 
+  rownames_to_column() %>% 
+  select(rowname) %>% 
+  cbind(df)
+
+
+write_csv(final_results,"C:/Users/CXY-XDLW/Desktop/titanic_results.csv")
+  
+
